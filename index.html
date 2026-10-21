@@ -262,6 +262,7 @@
         background: #1762b3;
         color: white;
       }
+      .modechooser {border:1px solid #cbd6e4;border-radius:10px;padding:15px;margin:18px 0;display:grid;gap:12px} .modechooser label{display:flex;gap:10px;align-items:center;cursor:pointer} .modechooser input{width:auto} .textitem{padding:16px 0;border-bottom:1px solid #d9e3ef} .textitem label{display:block;font-weight:650;margin-bottom:9px} .textitem select{width:100%;padding:12px;border:1px solid #849ab5;border-radius:8px;background:white;color:#10233e;font:inherit} :focus-visible{outline:3px solid #d78a00;outline-offset:3px}
       .notice {
         background: #fff7df;
         border-left: 4px solid #b58515;
@@ -319,7 +320,7 @@
         <div id="welcome">
           <h2>Registro del estudiante</h2>
           <p class="muted">
-            30 preguntas de selección única y un reto visual de identificación.
+            30 preguntas de selección única y una actividad de identificación de componentes con dos modalidades equivalentes.
             Tus respuestas se guardarán automáticamente en este navegador.
           </p>
           <label class="field" for="name">Nombre completo</label
@@ -350,7 +351,10 @@
           </div>
         </div>
         <div id="board" class="hidden">
-          <div class="tag">RETO VISUAL · COMPONENTES DE ARDUINO UNO</div>
+          <div class="tag">ACTIVIDAD FINAL · COMPONENTES DE ARDUINO UNO</div>
+          <p class="muted" id="modeintro">Elige cómo deseas realizar la actividad. Ambas modalidades tienen el mismo valor y puedes utilizar la que te resulte más cómoda.</p>
+          <fieldset class="modechooser"><legend><strong>Modalidad de identificación</strong></legend><label><input type="radio" name="mode" value="visual"> Identificación sobre la placa</label><label><input type="radio" name="mode" value="text"> Identificación mediante descripciones</label></fieldset>
+          <div id="visualactivity">
           <h2>Identifica las partes de la placa</h2>
           <p class="muted">
             Observa los números sobre componentes específicos de la placa.
@@ -369,6 +373,8 @@
           <div id="slots" class="slots"></div>
           <div id="chips" class="chips"></div>
           <p id="boardstatus" class="muted"></p>
+          </div>
+          <div id="textactivity" class="hidden" aria-label="Identificación mediante descripciones"><h2>Relaciona los componentes con sus funciones</h2><p class="muted">En cada enunciado, selecciona el componente correcto. Usa la tecla Tab para avanzar y las flechas para elegir.</p><div id="textitems"></div><p id="textstatus" role="status" aria-live="polite"></p></div>
           <div class="actions">
             <button class="secondary" id="backboard">Volver a preguntas</button
             ><button id="finishboard">Calificar evaluación</button>
@@ -725,7 +731,7 @@
             "El conversor intermedia la comunicación entre USB y la interfaz serie del microcontrolador.",
         },
       ];
-      const KEY = "eif205_arduino_quiz_v4";
+      const KEY = "eif205_arduino_quiz_v5_accessible";
       let state = {
         name: "",
         idnum: "",
@@ -734,6 +740,8 @@
         finished: false,
         started: "",
         boardAnswers: {},
+        mode: "visual",
+        textAnswers: {},
       };
       try {
         const saved = JSON.parse(localStorage.getItem(KEY));
@@ -817,6 +825,8 @@
           finished: false,
           started: new Date().toLocaleString("es-CR"),
           boardAnswers: {},
+        mode: "visual",
+        textAnswers: {},
         };
         save();
         render();
@@ -850,9 +860,30 @@
         { id: "jack", label: "Conector de alimentación externa", x: 9, y: 85 },
         { id: "led", label: "LED integrado (pin 13)", x: 90, y: 47 },
       ];
+      const descriptions = [
+        {id:"usb",q:"Permite conectar la placa a la computadora para cargar programas y comunicarse con ella."},
+        {id:"reset",q:"Permite reiniciar la ejecución del programa almacenado en la placa."},
+        {id:"digital",q:"Se utilizan para leer o enviar señales digitales de nivel alto o bajo."},
+        {id:"chip",q:"Ejecuta las instrucciones del programa y controla las entradas y salidas."},
+        {id:"power",q:"Agrupan conexiones de alimentación y referencia eléctrica, como 5V, 3.3V y GND."},
+        {id:"analog",q:"Permiten medir señales analógicas de sensores mediante los pines A0 a A5."},
+        {id:"jack",q:"Permite conectar una fuente de alimentación externa compatible mediante un conector cilíndrico."},
+        {id:"led",q:"Es una luz integrada en la placa, asociada al pin digital 13."}
+      ];
       let selectedPart = null;
+      function renderTextActivity(){
+        const a=state.textAnswers || (state.textAnswers={});
+        $("textitems").innerHTML=descriptions.map((d,i)=>`<div class="textitem"><label for="desc-${i}">${i+1}. ${escapeHtml(d.q)}</label><select id="desc-${i}" data-desc="${d.id}"><option value="">Selecciona un componente</option>${parts.map(p=>`<option value="${p.id}" ${a[d.id]===p.id?'selected':''}>${escapeHtml(p.label)}</option>`).join('')}</select></div>`).join('');
+        document.querySelectorAll('[data-desc]').forEach(el=>el.onchange=()=>{a[el.dataset.desc]=el.value;save();updateTextStatus()});
+        updateTextStatus();
+      }
+      function updateTextStatus(){const a=state.textAnswers||{};$("textstatus").textContent=`${descriptions.filter(d=>a[d.id]).length} de 8 respuestas seleccionadas.`}
+      function setMode(mode){state.mode=mode;save();document.querySelectorAll('[name=mode]').forEach(r=>r.checked=r.value===mode);$("visualactivity").classList.toggle('hidden',mode!=='visual');$("textactivity").classList.toggle('hidden',mode!=='text');if(mode==='text')renderTextActivity()}
+      document.querySelectorAll('[name=mode]').forEach(r=>r.addEventListener('change',()=>setMode(r.value)));
+
       function renderBoard() {
         show("board");
+        setMode(state.mode || "visual");
         $("targets").innerHTML = parts
           .map(
             (p, i) =>
@@ -907,8 +938,8 @@
       };
       $("finishboard").onclick = () => {
         if (
-          Object.keys(state.boardAnswers).length < parts.length &&
-          !confirm("Hay ubicaciones sin responder. ¿Deseas finalizar?")
+          (state.mode === "text" ? descriptions.filter(d=>(state.textAnswers||{})[d.id]).length : Object.keys(state.boardAnswers).length) < parts.length &&
+          !confirm("Hay respuestas sin completar. ¿Deseas finalizar?")
         )
           return;
         state.finished = true;
@@ -922,7 +953,7 @@
         let hits = questions.filter(
           (q, i) => q.answer === state.answers[i],
         ).length;
-        let visualHits = parts.filter(
+        let visualHits = state.mode === "text" ? descriptions.filter(d=>(state.textAnswers||{})[d.id]===d.id).length : parts.filter(
           (p) => state.boardAnswers[p.id] === p.label,
         ).length;
         let total = questions.length + parts.length;
@@ -937,17 +968,14 @@
             return `<div class="review"><b>${i + 1}. ${escapeHtml(q.q)}</b> <span class="${ok ? "good" : "bad"}">${ok ? "Correcta" : "Incorrecta"}</span><p>Tu respuesta: ${state.answers[i] === null ? "Sin responder" : escapeHtml(q.options[state.answers[i]])}</p><p>Respuesta correcta: ${escapeHtml(q.options[q.answer])}</p><p><i>${escapeHtml(q.explain)}</i></p></div>`;
           })
           .join("");
-        let visualReport =
-          "<h3>Reto visual: identificación de la placa</h3>" +
-          parts
-            .map(
-              (p, i) =>
-                `<div class="review"><b>Punto ${i + 1}</b>: respuesta ${escapeHtml(state.boardAnswers[p.id] || "Sin responder")} — ${state.boardAnswers[p.id] === p.label ? "Correcta" : "Incorrecta"}. Correcta: ${escapeHtml(p.label)}</div>`,
-            )
-            .join("");
+        let visualReport = state.mode === "text" ?
+          "<h3>Actividad final: identificación mediante descripciones</h3>" +
+          descriptions.map((d,i)=>{const p=parts.find(p=>p.id===d.id);const chosen=parts.find(p=>p.id===(state.textAnswers||{})[d.id]);return `<div class="review"><b>${i+1}. ${escapeHtml(d.q)}</b><p>Respuesta: ${escapeHtml(chosen?.label||"Sin responder")}. ${chosen?.id===d.id?"Correcta":"Incorrecta"}. Correcta: ${escapeHtml(p.label)}</p></div>`}).join("") :
+          "<h3>Actividad final: identificación sobre la placa</h3>" +
+          parts.map((p,i)=>`<div class="review"><b>Punto ${i+1}</b>: respuesta ${escapeHtml(state.boardAnswers[p.id]||"Sin responder")} — ${state.boardAnswers[p.id]===p.label?"Correcta":"Incorrecta"}. Correcta: ${escapeHtml(p.label)}</div>`).join("");
         $("review").innerHTML = html + visualReport;
         $("report").innerHTML =
-          `<h1>EIF205 · Arquitectura de Computadoras</h1><h2>Informe de evaluación: Laboratorios prácticos con Arduino</h2><p><b>Estudiante:</b> ${escapeHtml(state.name)}<br><b>Carné:</b> ${escapeHtml(state.idnum)}<br><b>Inicio:</b> ${escapeHtml(state.started)}<br><b>Finalización:</b> ${escapeHtml(state.completed || "")}<br><b>Aciertos:</b> ${hits + visualHits} de ${total} (${hits} teóricos, ${visualHits} visuales)</p><div class="score">Nota: ${grade} / 100</div><h2>Detalle de preguntas y respuestas</h2>${html}${visualReport}<p>Documento generado desde el navegador del estudiante. La evaluación no se envía automáticamente a un servidor.</p>`;
+          `<h1>EIF205 · Arquitectura de Computadoras</h1><h2>Informe de evaluación: Laboratorios prácticos con Arduino</h2><p><b>Estudiante:</b> ${escapeHtml(state.name)}<br><b>Carné:</b> ${escapeHtml(state.idnum)}<br><b>Inicio:</b> ${escapeHtml(state.started)}<br><b>Finalización:</b> ${escapeHtml(state.completed || "")}<br><b>Aciertos:</b> ${hits + visualHits} de ${total} (${hits} teóricos, ${visualHits} de identificación)</p><div class="score">Nota: ${grade} / 100</div><h2>Detalle de preguntas y respuestas</h2>${html}${visualReport}<p>Documento generado desde el navegador del estudiante. La evaluación no se envía automáticamente a un servidor.</p>`;
       }
       $("pdf").onclick = () => window.print();
       $("restart").onclick = () => {
@@ -961,6 +989,8 @@
           finished: false,
           started: "",
           boardAnswers: {},
+        mode: "visual",
+        textAnswers: {},
         };
         render();
       };
